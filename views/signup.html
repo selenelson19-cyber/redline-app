@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — Redline</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wrap" style="max-width:400px;">
+    <div class="eyebrow">Redline</div>
+    <h1 style="font-size:24px;">Create your account</h1>
+    <div class="card" style="margin-top:20px;">
+      <div class="error" id="err"></div>
+      <form id="form">
+        <label class="mono" style="font-size:12px; color:var(--faint);">EMAIL</label>
+        <input type="email" id="email" required />
+        <label class="mono" style="font-size:12px; color:var(--faint);">PASSWORD (8+ characters)</label>
+        <input type="password" id="password" required minlength="8" />
+        <button type="submit" class="btn" style="width:100%;">Create account &amp; continue to plan</button>
+      </form>
+      <p style="font-size:13px; color:var(--muted); margin-top:16px;">
+        Already have an account? <a href="/login">Log in</a>
+      </p>
+    </div>
+  </div>
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errBox = document.getElementById("err");
+      errBox.style.display = "none";
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errBox.textContent = data.error || "Something went wrong.";
+        errBox.style.display = "block";
+        return;
+      }
+      window.location.href = "/billing";
+    });
+  </script>
+</body>
+</html>
