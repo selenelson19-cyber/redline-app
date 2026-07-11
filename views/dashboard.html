@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redline — Review a contract</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="header-bar">
+      <div>
+        <div class="eyebrow">Redline · Agency Contract Review</div>
+        <h1 class="serif" style="font-size:26px;">Know what you're signing.</h1>
+      </div>
+      <div style="text-align:right;">
+        <button id="manageBilling" class="btn-outline" style="border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; margin-right:8px;">Billing</button>
+        <button id="logout" class="btn-outline" style="border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer;">Log out</button>
+      </div>
+    </div>
+
+    <div id="inputView">
+      <p style="font-size:14px; color:var(--muted); margin-bottom:20px;">
+        Paste a freelance or vendor agreement below. We'll flag payment terms, IP ownership,
+        liability, termination, auto-renewal, and scope clauses worth a second look.
+      </p>
+      <div class="card" style="padding:16px;">
+        <textarea id="text" placeholder="Paste your contract text here..."
+          style="width:100%; height:260px; border:none; outline:none; resize:none; font-family: ui-monospace, monospace; font-size:13px; line-height:1.6;"></textarea>
+      </div>
+      <div class="error" id="err" style="margin-top:14px;"></div>
+      <button id="analyze" class="btn" style="width:100%; margin-top:14px;">Analyze contract</button>
+    </div>
+
+    <div id="resultView" style="display:none;"></div>
+  </div>
+
+  <script>
+    const RISK_STYLES = {
+      red: { bar: "#B23B2E", bg: "#FBEEEC", label: "Push back" },
+      yellow: { bar: "#A87B1F", bg: "#FBF3E4", label: "Worth negotiating" },
+      green: { bar: "#3D6B4F", bg: "#EDF3EE", label: "Standard" },
+    };
+    const CODES = {
+      "Payment Terms": "PAY", "IP Ownership": "IP", "Liability & Indemnification": "LIAB",
+      "Termination": "TERM", "Auto-Renewal": "RENEW", "Confidentiality": "CONF",
+      "Non-Compete/Non-Solicit": "NCNS", "Scope Creep & Change Orders": "SCOPE",
+    };
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      await fetch("/api/logout", { method: "POST" });
+      window.location.href = "/login";
+    });
+    document.getElementById("manageBilling").addEventListener("click", async () => {
+      const res = await fetch("/api/create-portal-session", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    });
+
+    document.getElementById("analyze").addEventListener("click", async () => {
+      const text = document.getElementById("text").value;
+      const err = document.getElementById("err");
+      err.style.display = "none";
+      if (!text.trim()) {
+        err.textContent = "Paste a contract first.";
+        err.style.display = "block";
+        return;
+      }
+      const btn = document.getElementById("analyze");
+      btn.disabled = true;
+      btn.textContent = "Reading the fine print...";
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Analysis failed.");
+        renderResult(data);
+      } catch (e) {
+        err.textContent = e.message;
+        err.style.display = "block";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Analyze contract";
+      }
+    });
+
+    function renderResult(result) {
+      document.getElementById("inputView").style.display = "none";
+      const rv = document.getElementById("resultView");
+      rv.style.display = "block";
+
+      const overall = result.overallRisk === "high" ? RISK_STYLES.red
+        : result.overallRisk === "medium" ? RISK_STYLES.yellow : RISK_STYLES.green;
+
+      let html = `
+        <div style="background:${overall.bg}; border-radius:10px; padding:16px; margin-bottom:28px;">
+          <div class="mono" style="font-size:11px; text-transform:uppercase; letter-spacing:0.15em; color:${overall.bar}; margin-bottom:6px;">
+            ${result.overallRisk} overall risk
+          </div>
+          <p style="font-size:14px; margin:0;">${result.summary}</p>
+        </div>
+        <div style="display:flex; gap:16px;">
+          <div style="display:flex; flex-direction:column; gap:8px; min-width:56px;">
+      `;
+      result.clauses.forEach((c) => {
+        const s = RISK_STYLES[c.riskLevel] || RISK_STYLES.yellow;
+        const code = CODES[c.category] || c.category.slice(0, 4).toUpperCase();
+        html += `<div class="mono" style="font-size:10px; border-left:3px solid ${s.bar}; padding:4px 8px; color:${s.bar};">${code}</div>`;
+      });
+      html += `</div><div style="flex:1; display:flex; flex-direction:column; gap:16px;">`;
+      result.clauses.forEach((c) => {
+        const s = RISK_STYLES[c.riskLevel] || RISK_STYLES.yellow;
+        html += `
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+              <span class="mono" style="font-size:12px; color:var(--muted);">${c.category}</span>
+              <span class="mono" style="font-size:10px; text-transform:uppercase; padding:2px 8px; border-radius:99px; background:${s.bg}; color:${s.bar};">${s.label}</span>
+            </div>
+            <blockquote style="font-size:14px; font-style:italic; border-left:2px solid var(--rule); padding-left:10px; margin:0 0 10px; color:var(--muted);">"${escapeHtml(c.quote)}"</blockquote>
+            <p style="font-size:14px; margin:0 0 10px;">${escapeHtml(c.issue)}</p>
+            <div style="background:var(--paper); border-radius:6px; padding:10px; font-size:14px;">
+              <span class="mono" style="font-size:10px; text-transform:uppercase; color:var(--faint); display:block; margin-bottom:4px;">Suggested language</span>
+              ${escapeHtml(c.suggestion)}
+            </div>
+          </div>
+        `;
+      });
+      html += `</div></div>
+        <button class="btn-outline" style="border-radius:6px; margin-top:24px; cursor:pointer;" onclick="location.reload()">Review another contract</button>
+      `;
+      rv.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+        </html>
