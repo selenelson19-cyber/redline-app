@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subscribe — Redline</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wrap" style="max-width:480px;">
+    <div class="eyebrow">Redline</div>
+    <h1 style="font-size:24px;">Activate your subscription</h1>
+    <div class="card" style="margin-top:20px;">
+      <h2 class="serif" style="margin-top:0;">$29/month</h2>
+      <p style="color:var(--muted); font-size:14px;">Unlimited contract reviews. Cancel anytime from your account.</p>
+      <button id="checkout" class="btn" style="width:100%;">Continue to payment</button>
+      <div class="error" id="err"></div>
+    </div>
+  </div>
+  <script>
+    document.getElementById("checkout").addEventListener("click", async () => {
+      const btn = document.getElementById("checkout");
+      btn.disabled = true;
+      btn.textContent = "Redirecting...";
+      const res = await fetch("/api/create-checkout-session", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        document.getElementById("err").textContent = "Couldn't start checkout. Try again.";
+        document.getElementById("err").style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Continue to payment";
+      }
+    });
+  </script>
+</body>
+    </html>
