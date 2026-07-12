@@ -25,23 +25,20 @@ app.post("/webhook/stripe", express.raw({ type: "application/json" }), (req, res
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  const setStatusByCustomer = (customerId, status) => {
-    db.prepare("UPDATE users SET subscription_status = ? WHERE stripe_customer_id = ?").run(status, customerId);
-  };
-
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
-      db.prepare(
-        "UPDATE users SET stripe_subscription_id = ?, subscription_status = 'active' WHERE stripe_customer_id = ?"
-      ).run(session.subscription, session.customer);
+      db.updateUserByCustomer(session.customer, {
+        stripe_subscription_id: session.subscription,
+        subscription_status: "active",
+      });
       break;
     }
     case "customer.subscription.updated":
-      setStatusByCustomer(event.data.object.customer, event.data.object.status);
+      db.updateUserByCustomer(event.data.object.customer, { subscription_status: event.data.object.status });
       break;
     case "customer.subscription.deleted":
-      setStatusByCustomer(event.data.object.customer, "canceled");
+      db.updateUserByCustomer(event.data.object.customer, { subscription_status: "canceled" });
       break;
   }
 
@@ -85,7 +82,7 @@ app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "views/login.h
 app.get("/billing", requireAuth, (req, res) => res.sendFile(path.join(__dirname, "views/billing.html")));
 
 app.get("/dashboard", requireAuth, (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  const user = db.findUserById(req.user.id);
   if (!user || !["active", "trialing"].includes(user.subscription_status)) {
     return res.redirect("/billing");
   }
@@ -97,22 +94,20 @@ app.post("/api/signup", async (req, res) => {
   if (!email || !password || password.length < 8) {
     return res.status(400).json({ error: "Email and an 8+ character password are required." });
   }
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
-  if (existing) return res.status(400).json({ error: "An account with that email already exists." });
+  if (db.findUserByEmail(email)) {
+    return res.status(400).json({ error: "An account with that email already exists." });
+  }
 
   const hash = await bcrypt.hash(password, 10);
   const customer = await stripe.customers.create({ email });
-  const info = db
-    .prepare("INSERT INTO users (email, password_hash, stripe_customer_id) VALUES (?, ?, ?)")
-    .run(email, hash, customer.id);
-  const user = { id: info.lastInsertRowid, email };
+  const user = db.createUser({ email, password_hash: hash, stripe_customer_id: customer.id });
   setAuthCookie(res, user);
   res.json({ ok: true });
 });
 
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+  const user = db.findUserByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: "Invalid email or password." });
   }
@@ -126,12 +121,12 @@ app.post("/api/logout", (req, res) => {
 });
 
 app.get("/api/me", requireAuthApi, (req, res) => {
-  const user = db.prepare("SELECT email, subscription_status FROM users WHERE id = ?").get(req.user.id);
-  res.json(user);
+  const user = db.findUserById(req.user.id);
+  res.json({ email: user.email, subscription_status: user.subscription_status });
 });
 
 app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  const user = db.findUserById(req.user.id);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: user.stripe_customer_id,
@@ -143,7 +138,7 @@ app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
 });
 
 app.post("/api/create-portal-session", requireAuthApi, async (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  const user = db.findUserById(req.user.id);
   const session = await stripe.billingPortal.sessions.create({
     customer: user.stripe_customer_id,
     return_url: `${APP_URL}/dashboard`,
@@ -152,7 +147,7 @@ app.post("/api/create-portal-session", requireAuthApi, async (req, res) => {
 });
 
 app.post("/api/analyze", requireAuthApi, async (req, res) => {
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  const user = db.findUserById(req.user.id);
   if (!["active", "trialing"].includes(user.subscription_status)) {
     return res.status(402).json({ error: "Active subscription required." });
   }
