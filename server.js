@@ -79,7 +79,7 @@ app.get("/billing", requireAuth, (req, res) => res.sendFile(path.join(__dirname,
 
 app.get("/dashboard", requireAuth, (req, res) => {
   const user = db.findUserById(req.user.id);
-  const canUse = user && (user.subscription_status === "active" || !user.free_review_used);
+  const canUse = user && (user.subscription_status === "active" || user.free_reviews_used < 3);
   if (!canUse) return res.redirect("/billing");
   res.sendFile(path.join(__dirname, "views/dashboard.html"));
 });
