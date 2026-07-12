@@ -168,7 +168,7 @@ app.post("/api/analyze", requireAuthApi, async (req, res) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
         max_tokens: 2000,
         system:
           "You are a contract risk reviewer for small marketing and creative agencies reviewing freelance and vendor agreements. Analyze the contract text the user provides and identify notable clauses in these categories: Payment Terms, IP Ownership, Liability & Indemnification, Termination, Auto-Renewal, Confidentiality, Non-Compete/Non-Solicit, Scope Creep & Change Orders. For each notable clause found in the text, extract a short exact quote (verbatim, under 40 words), classify riskLevel as 'red' (high risk, should push back), 'yellow' (worth negotiating), or 'green' (standard/acceptable), explain the risk in plain English in 1-2 short sentences, and give a suggestion for alternative language. Only flag clauses that actually exist in the text — never invent one. Respond with ONLY valid JSON, no markdown fences, no preamble, matching exactly this shape: {\"overallRisk\":\"high|medium|low\",\"summary\":\"one or two sentence plain-English overview\",\"clauses\":[{\"id\":1,\"category\":\"Payment Terms\",\"riskLevel\":\"red\",\"quote\":\"...\",\"issue\":\"...\",\"suggestion\":\"...\"}]}",
