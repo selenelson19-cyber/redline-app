@@ -79,9 +79,8 @@ app.get("/billing", requireAuth, (req, res) => res.sendFile(path.join(__dirname,
 
 app.get("/dashboard", requireAuth, (req, res) => {
   const user = db.findUserById(req.user.id);
-  if (!user || user.subscription_status !== "active") {
-    return res.redirect("/billing");
-  }
+  const canUse = user && (user.subscription_status === "active" || !user.free_review_used);
+  if (!canUse) return res.redirect("/billing");
   res.sendFile(path.join(__dirname, "views/dashboard.html"));
 });
 
@@ -116,7 +115,11 @@ app.post("/api/logout", (req, res) => {
 
 app.get("/api/me", requireAuthApi, (req, res) => {
   const user = db.findUserById(req.user.id);
-  res.json({ email: user.email, subscription_status: user.subscription_status });
+  res.json({
+    email: user.email,
+    subscription_status: user.subscription_status,
+    free_review_used: user.free_review_used,
+  });
 });
 
 app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
@@ -146,7 +149,10 @@ app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
 
 app.post("/api/analyze", requireAuthApi, async (req, res) => {
   const user = db.findUserById(req.user.id);
-  if (user.subscription_status !== "active") {
+  const isSubscribed = user.subscription_status === "active";
+  const canUseFree = !user.free_review_used;
+
+  if (!isSubscribed && !canUseFree) {
     return res.status(402).json({ error: "Active subscription required." });
   }
 
@@ -173,6 +179,9 @@ app.post("/api/analyze", requireAuthApi, async (req, res) => {
     const raw = (data.content || []).map((b) => b.text || "").join("\n");
     const clean = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean);
+
+    if (!isSubscribed) db.updateUserById(user.id, { free_review_used: true });
+
     res.json(parsed);
   } catch (err) {
     console.error(err);
