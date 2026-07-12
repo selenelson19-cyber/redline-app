@@ -1,5 +1,4 @@
 const fs = require("fs");
-const path = require("path");
 require("dotenv").config();
 
 const DB_FILE = process.env.DB_PATH || "./redline.json";
@@ -20,26 +19,23 @@ const db = {
   findUserById(id) {
     return readData().users.find((u) => u.id === id) || null;
   },
-  findUserByStripeCustomer(customerId) {
-    return readData().users.find((u) => u.stripe_customer_id === customerId) || null;
-  },
-  createUser({ email, password_hash, stripe_customer_id }) {
+  createUser({ email, password_hash }) {
     const data = readData();
     const user = {
       id: data.nextId++,
       email,
       password_hash,
-      stripe_customer_id: stripe_customer_id || null,
-      stripe_subscription_id: null,
+      paystack_customer_code: null,
+      paystack_subscription_code: null,
       subscription_status: "none",
     };
     data.users.push(user);
     writeData(data);
     return user;
   },
-  updateUserByCustomer(customerId, updates) {
+  updateUserById(id, updates) {
     const data = readData();
-    const user = data.users.find((u) => u.stripe_customer_id === customerId);
+    const user = data.users.find((u) => u.id === id);
     if (user) Object.assign(user, updates);
     writeData(data);
     return user;
