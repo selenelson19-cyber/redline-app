@@ -28,6 +28,7 @@ const db = {
       paystack_customer_code: null,
       paystack_subscription_code: null,
       subscription_status: "none",
+      free_review_used: false,
     };
     data.users.push(user);
     writeData(data);
