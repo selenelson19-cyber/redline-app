@@ -176,6 +176,7 @@ app.post("/api/analyze", requireAuthApi, async (req, res) => {
       }),
     });
     const data = await response.json();
+    console.log("Anthropic response:", JSON.stringify(data));
     const raw = (data.content || []).map((b) => b.text || "").join("\n");
     const clean = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean);
