@@ -150,7 +150,7 @@ app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
 app.post("/api/analyze", requireAuthApi, async (req, res) => {
   const user = db.findUserById(req.user.id);
   const isSubscribed = user.subscription_status === "active";
-  const canUseFree = !user.free_review_used;
+  const canUseFree = user.free_reviews_used < 3;
 
   if (!isSubscribed && !canUseFree) {
     return res.status(402).json({ error: "Active subscription required." });
