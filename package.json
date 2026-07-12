@@ -1,7 +1,7 @@
 {
   "name": "redline",
   "version": "1.0.0",
-  "description": "Contract risk review for small agencies — Stripe-gated web app",
+  "description": "Contract risk review for small agencies — Paystack-gated web app",
   "type": "commonjs",
   "engines": { "node": ">=18" },
   "scripts": {
@@ -13,7 +13,6 @@
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2",
-    "stripe": "^16.8.0"
+    "jsonwebtoken": "^9.0.2"
   }
 }
