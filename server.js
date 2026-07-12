@@ -4,42 +4,38 @@ const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
-const Stripe = require("stripe");
+const crypto = require("crypto");
 const db = require("./db");
 
 const app = express();
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const PORT = process.env.PORT || 3000;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_PLAN_CODE = process.env.PAYSTACK_PLAN_CODE;
 
-app.post("/webhook/stripe", express.raw({ type: "application/json" }), (req, res) => {
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      req.headers["stripe-signature"],
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error("Webhook signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+app.post("/webhook/paystack", express.raw({ type: "application/json" }), (req, res) => {
+  const hash = crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(req.body).digest("hex");
+  if (hash !== req.headers["x-paystack-signature"]) {
+    return res.status(401).send("Invalid signature");
   }
 
-  switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object;
-      db.updateUserByCustomer(session.customer, {
-        stripe_subscription_id: session.subscription,
+  const event = JSON.parse(req.body.toString());
+
+  if (event.event === "charge.success") {
+    const email = event.data.customer.email;
+    const user = db.findUserByEmail(email);
+    if (user) {
+      db.updateUserById(user.id, {
         subscription_status: "active",
+        paystack_customer_code: event.data.customer.customer_code,
       });
-      break;
     }
-    case "customer.subscription.updated":
-      db.updateUserByCustomer(event.data.object.customer, { subscription_status: event.data.object.status });
-      break;
-    case "customer.subscription.deleted":
-      db.updateUserByCustomer(event.data.object.customer, { subscription_status: "canceled" });
-      break;
+  }
+
+  if (event.event === "subscription.disable" || event.event === "subscription.not_renew") {
+    const email = event.data.customer.email;
+    const user = db.findUserByEmail(email);
+    if (user) db.updateUserById(user.id, { subscription_status: "canceled" });
   }
 
   res.json({ received: true });
@@ -83,7 +79,7 @@ app.get("/billing", requireAuth, (req, res) => res.sendFile(path.join(__dirname,
 
 app.get("/dashboard", requireAuth, (req, res) => {
   const user = db.findUserById(req.user.id);
-  if (!user || !["active", "trialing"].includes(user.subscription_status)) {
+  if (!user || user.subscription_status !== "active") {
     return res.redirect("/billing");
   }
   res.sendFile(path.join(__dirname, "views/dashboard.html"));
@@ -97,10 +93,8 @@ app.post("/api/signup", async (req, res) => {
   if (db.findUserByEmail(email)) {
     return res.status(400).json({ error: "An account with that email already exists." });
   }
-
   const hash = await bcrypt.hash(password, 10);
-  const customer = await stripe.customers.create({ email });
-  const user = db.createUser({ email, password_hash: hash, stripe_customer_id: customer.id });
+  const user = db.createUser({ email, password_hash: hash });
   setAuthCookie(res, user);
   res.json({ ok: true });
 });
@@ -127,28 +121,32 @@ app.get("/api/me", requireAuthApi, (req, res) => {
 
 app.post("/api/create-checkout-session", requireAuthApi, async (req, res) => {
   const user = db.findUserById(req.user.id);
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: user.stripe_customer_id,
-    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-    success_url: `${APP_URL}/dashboard`,
-    cancel_url: `${APP_URL}/billing`,
-  });
-  res.json({ url: session.url });
-});
-
-app.post("/api/create-portal-session", requireAuthApi, async (req, res) => {
-  const user = db.findUserById(req.user.id);
-  const session = await stripe.billingPortal.sessions.create({
-    customer: user.stripe_customer_id,
-    return_url: `${APP_URL}/dashboard`,
-  });
-  res.json({ url: session.url });
+  try {
+    const response = await fetch("https://api.paystack.co/transaction/initialize", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: user.email,
+        amount: 4000000,
+        plan: PAYSTACK_PLAN_CODE,
+        callback_url: `${APP_URL}/dashboard`,
+      }),
+    });
+    const data = await response.json();
+    if (!data.status) return res.status(500).json({ error: data.message || "Could not start checkout." });
+    res.json({ url: data.data.authorization_url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not start checkout." });
+  }
 });
 
 app.post("/api/analyze", requireAuthApi, async (req, res) => {
   const user = db.findUserById(req.user.id);
-  if (!["active", "trialing"].includes(user.subscription_status)) {
+  if (user.subscription_status !== "active") {
     return res.status(402).json({ error: "Active subscription required." });
   }
 
